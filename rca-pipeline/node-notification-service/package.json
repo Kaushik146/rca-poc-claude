@@ -1,0 +1,13 @@
+{
+  "name": "node-notification-service",
+  "version": "1.0.0",
+  "description": "Node.js HTTP notification service",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node server.js"
+  },
+  "keywords": ["notification", "http", "service"],
+  "author": "",
+  "license": "MIT"
+}
