@@ -1,0 +1,12 @@
+{
+  "pages": [
+    {
+      "incident_id": "PD-88421",
+      "service": "inventory-service",
+      "paged_at": "2026-04-18T08:51:00Z",
+      "severity": "SEV-2",
+      "escalation_policy": "inventory-oncall",
+      "acknowledged_at": "2026-04-18T08:53:00Z"
+    }
+  ]
+}

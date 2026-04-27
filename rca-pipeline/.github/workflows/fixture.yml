@@ -1,0 +1,91 @@
+name: RCA fixture regression
+
+# Runs the offline fixture harness on every PR. Exercises each skill script
+# against .claude/fixtures/INC-DEMO-001/ with no MCP credentials needed.
+# Also runs the seeded-bug path so fix-and-test has a known failing test to
+# target when it's invoked live.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  fixture-harness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install deps
+        run: |
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install pytest flask
+
+      - name: Verify .mcp.json structure
+        # Warnings only — env vars aren't set for PR checks (only at deploy).
+        run: python3 scripts/verify_mcp_config.py
+
+      - name: Run fixture harness (offline)
+        run: python3 scripts/fixture_harness.py INC-DEMO-001
+
+      # Round-trip test for the propose-only → open-pr handoff.
+      # This is the regression gate for the cross-run comment payload:
+      # base64-encoding, SHA-256 integrity pin, tampering detection,
+      # newest-wins selection, `-->`-in-diff survival, unicode.
+      - name: Handoff round-trip test
+        run: python3 -m unittest scripts.tests.test_handoff_roundtrip -v
+
+      # Adversarial prompt-injection corpus. 30 cases covering the
+      # canonical openers, role/tool markers, invisible-char
+      # obfuscation, jailbreak handles, exfil attempts, plus a few
+      # "legitimate content must not be mangled" guards.
+      - name: Sanitizer adversarial tests
+        run: python3 -m unittest scripts.tests.test_sanitize -v
+
+      # Chassis contract tests: selector uncertainty on no-evidence,
+      # CRITICAL-beats-LOW severity weighting for vendor anomalies,
+      # GitHub comment-size ceiling for the propose-only payload, and
+      # prose-lint of rca.md for non-negotiable guardrail tokens. Each
+      # test guards an invariant that nothing else in CI catches.
+      - name: Chassis contract tests
+        run: python3 -m unittest scripts.tests.test_chassis_contracts -v
+
+      # Install claude CLI and run the init-block smoke test. This is
+      # the gate that would have caught the three flag bugs we shipped
+      # during the pre-pilot shakedown. No API key is needed — we
+      # parse the init event which the CLI emits before auth happens.
+      - name: Install Claude Code CLI
+        run: |
+          npm install -g @anthropic-ai/claude-code
+          claude --version
+
+      - name: CLI smoke test (flag + topology)
+        run: python3 scripts/smoke_cli.py
+
+      - name: Seeded-bug flow (fix-and-test target)
+        run: |
+          python3 scripts/seed_bug.py
+          # The unit tests MUST fail now — the bug is in place.
+          set +e
+          pytest python-inventory-service/tests/test_reserve_boundary.py -q
+          rc=$?
+          set -e
+          if [ $rc -eq 0 ]; then
+            echo "::error::seed_bug.py did not actually break the test suite"
+            python3 scripts/seed_bug.py --revert
+            exit 1
+          fi
+          echo "seeded bug breaks test suite as expected (rc=$rc)"
+          python3 scripts/seed_bug.py --revert
+          # After revert, tests must pass again.
+          pytest python-inventory-service/tests/test_reserve_boundary.py -q

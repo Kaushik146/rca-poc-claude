@@ -1,0 +1,60 @@
+{
+  "_comment": "MCP server config for the RCA pipeline. Replace placeholder env vars with real secrets in your environment - DO NOT commit real credentials. For enterprise deployments requiring VPC-only data, swap the remote/hosted servers below for their self-hosted equivalents (see MCP_Landscape_for_RCA.md).",
+  "mcpServers": {
+    "atlassian": {
+      "_comment": "Atlassian Remote MCP Server (Rovo). GA Feb 2026. Covers Jira + Confluence.",
+      "type": "http",
+      "url": "https://mcp.atlassian.com/v1/mcp",
+      "headers": {
+        "Authorization": "Bearer ${ATLASSIAN_OAUTH_TOKEN}"
+      }
+    },
+    "azure-devops": {
+      "_comment": "Microsoft's official ADO MCP. Use local stdio until remote MCP GA. See microsoft/azure-devops-mcp.",
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@microsoft/azure-devops-mcp-server"],
+      "env": {
+        "AZURE_DEVOPS_ORG_URL": "${AZURE_DEVOPS_ORG_URL}",
+        "AZURE_DEVOPS_PAT": "${AZURE_DEVOPS_PAT}"
+      }
+    },
+    "datadog": {
+      "_comment": "Datadog Remote MCP. GA March 10, 2026. Toolsets: APM, logs, metrics, incidents. Swap to self-host (e.g. winor30/mcp-server-datadog) if data must stay in VPC.",
+      "type": "http",
+      "url": "https://mcp.datadoghq.com/api/v2/mcp",
+      "headers": {
+        "DD-API-KEY": "${DD_API_KEY}",
+        "DD-APPLICATION-KEY": "${DD_APP_KEY}"
+      }
+    },
+    "dynatrace": {
+      "_comment": "Dynatrace official MCP. Alternative to Datadog; exposes Davis AI + DQL over Grail.",
+      "type": "stdio",
+      "command": "docker",
+      "args": ["run", "--rm", "-i", "-e", "DT_ENV_URL", "-e", "DT_API_TOKEN", "mcp/dynatrace-mcp-server"],
+      "env": {
+        "DT_ENV_URL": "${DT_ENV_URL}",
+        "DT_API_TOKEN": "${DT_API_TOKEN}"
+      }
+    },
+    "github": {
+      "_comment": "GitHub official MCP. Remote OAuth for Claude Code still maturing; prefer local Docker + PAT for now.",
+      "type": "stdio",
+      "command": "docker",
+      "args": ["run", "--rm", "-i", "-e", "GITHUB_PERSONAL_ACCESS_TOKEN", "ghcr.io/github/github-mcp-server"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_PAT}"
+      }
+    },
+    "pagerduty": {
+      "_comment": "PagerDuty official MCP. Mar 27 2026 update added time-range filtering and assignee-on-create.",
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@pagerduty/mcp-server"],
+      "env": {
+        "PAGERDUTY_API_TOKEN": "${PAGERDUTY_API_TOKEN}"
+      }
+    }
+  }
+}

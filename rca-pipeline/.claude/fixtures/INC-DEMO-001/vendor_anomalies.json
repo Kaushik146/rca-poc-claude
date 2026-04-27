@@ -1,0 +1,23 @@
+{
+  "_comment": "Datadog Watchdog Insight for the INC-DEMO-001 scenario. The deploy at 08:10 introduced the off-by-one; error_rate starts climbing at 08:30 and Watchdog flags the window 08:30-08:50 as HIGH severity on inventory-service.error_rate. This shape matches what the Datadog MCP's watchdog_list_insights tool returns (fields renamed to our internal contract).",
+  "vendor_anomalies": [
+    {
+      "service":  "inventory-service",
+      "metric":   "error_rate",
+      "severity": "HIGH",
+      "start":    "2026-04-18T08:30:00Z",
+      "end":      "2026-04-18T08:50:00Z",
+      "source":   "datadog_watchdog",
+      "insight_url": "https://app.datadoghq.com/watchdog/insight/INC-DEMO-001-inv-err"
+    },
+    {
+      "service":  "inventory-service",
+      "metric":   "latency_p99",
+      "severity": "MEDIUM",
+      "start":    "2026-04-18T08:32:00Z",
+      "end":      "2026-04-18T08:48:00Z",
+      "source":   "datadog_watchdog",
+      "insight_url": "https://app.datadoghq.com/watchdog/insight/INC-DEMO-001-inv-lat"
+    }
+  ]
+}

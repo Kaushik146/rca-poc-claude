@@ -1,0 +1,11 @@
+{
+  "id": "INC-DEMO-001",
+  "title": "Checkout failing intermittently — last-unit reserves 500",
+  "description": "Customers report getting a 500 when trying to buy the last unit of an SKU. Started this morning after the inventory-service deploy.",
+  "reported_at": "2026-04-18T09:00:00Z",
+  "reporter": "kaushik@aspiresys.com",
+  "priority": "P1",
+  "affected_components": ["inventory-service"],
+  "raw_text_for_tws": "Checkout failing intermittently — last-unit reserves 500. Started this morning after the inventory-service deploy.",
+  "requirement_doc_url": "https://example.atlassian.net/wiki/spaces/ENG/pages/12345/Inventory+Reserve+API"
+}

@@ -1,0 +1,39 @@
+{
+  "candidates": [
+    {
+      "id": "PM-42",
+      "title": "Inventory reserve off-by-one — last unit unavailable",
+      "text": "Postmortem: customers reported 500s when reserving the final unit of a SKU. Root cause: boundary check in reserve() used strict greater-than, so the last available unit could never be reserved. Fix: change to >= on the stock comparison. Services: inventory-service, checkout-service. Remediation: deploy patch, backfill failed orders.",
+      "source": "confluence",
+      "url": "https://example.atlassian.net/wiki/spaces/PM/pages/4242"
+    },
+    {
+      "id": "PM-51",
+      "title": "Payment gateway 503 during peak traffic",
+      "text": "Third-party Stripe timeout during Black Friday. Rate limited. Services: payment-service. Remediation: raise retry budget, add circuit breaker.",
+      "source": "confluence",
+      "url": "https://example.atlassian.net/wiki/spaces/PM/pages/4251"
+    },
+    {
+      "id": "PD-70112",
+      "title": "Notification service queue backup",
+      "text": "SMS backlog after twilio webhook flap. notification-service queue depth 50k. Drained in 40 minutes. Remediation: auto-scale workers on queue depth metric.",
+      "source": "pagerduty",
+      "url": "https://example.pagerduty.com/incidents/PD-70112"
+    },
+    {
+      "id": "ADO-1877",
+      "title": "Inventory negative stock after promo",
+      "text": "Promo overflow caused oversold skus; reconciled manually. services: inventory-service. Remediation: atomic decrement with CAS.",
+      "source": "azure-devops-wiki",
+      "url": "https://dev.azure.com/contoso/wiki/1877"
+    },
+    {
+      "id": "PM-33",
+      "title": "Order service latency spike — thread pool exhaustion",
+      "text": "Tomcat maxThreads saturated after traffic burst. services: java-order-service. Remediation: bump maxThreads, add async handler.",
+      "source": "confluence",
+      "url": "https://example.atlassian.net/wiki/spaces/PM/pages/4233"
+    }
+  ]
+}

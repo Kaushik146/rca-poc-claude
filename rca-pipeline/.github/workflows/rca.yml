@@ -1,0 +1,340 @@
+name: RCA on incident label
+
+# Fires when an incident ticket is opened or labeled "incident" in GitHub Issues,
+# or manually via workflow_dispatch for replaying a ticket. Runs Claude Code in
+# headless mode, executes the /rca slash command, and posts the resulting
+# postmortem as an issue comment. Opens a PR with the proposed fix and assigns
+# the reviewer(s) configured via RCA_PR_REVIEWERS (default: copilot).
+#
+# Secrets required (set in repo Settings -> Secrets and variables -> Actions):
+#   ANTHROPIC_API_KEY         - Claude API key for the headless runner
+#   ATLASSIAN_OAUTH_TOKEN     - Jira/Confluence Rovo MCP
+#   AZURE_DEVOPS_ORG_URL      - e.g. https://dev.azure.com/contoso
+#   AZURE_DEVOPS_PAT          - ADO personal access token
+#   DD_API_KEY / DD_APP_KEY   - Datadog MCP
+#   DT_ENV_URL / DT_API_TOKEN - Dynatrace MCP
+#   GITHUB_PAT                - scoped PAT for GitHub MCP (the default GITHUB_TOKEN
+#                               works for issues/PRs but the MCP needs a PAT for
+#                               cross-repo code search)
+#   PAGERDUTY_API_TOKEN       - PagerDuty MCP
+
+on:
+  issues:
+    types: [opened, labeled]
+  workflow_dispatch:
+    inputs:
+      incident_id:
+        description: "Incident ID to run RCA on (e.g. INC-1234 or GH issue #123)"
+        required: true
+        type: string
+      rca_stage:
+        description: "Stage to run: full, propose-only, or open-pr"
+        required: false
+        default: "propose-only"
+        type: choice
+        options: ["propose-only", "full", "open-pr"]
+      rca_dry_run:
+        description: "Dry-run (substitute fixtures for MCP; never opens PR). Use for shakedowns."
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write       # Create branches for the fix PR
+  issues: write         # Post the postmortem as an issue comment
+  pull-requests: write  # Open the fix PR
+
+# Serialize per-incident runs. Two concurrent runs on the same issue
+# number (e.g. a label event arriving while a propose-only run is still
+# executing) would race the proposal comment and fight over the branch
+# `rca/<incident-id>`. We do NOT cancel-in-progress — a running analysis
+# should finish and its result be visible, not be torn down mid-run.
+concurrency:
+  group: rca-${{ github.event.issue.number || inputs.incident_id }}
+  cancel-in-progress: false
+
+jobs:
+  rca:
+    # Trigger conditions:
+    #   - workflow_dispatch (manual replay) — always allowed, respects RCA_DISABLED.
+    #   - issues.opened with label 'incident' — runs propose-only.
+    #   - issues.labeled with 'incident'      — runs propose-only.
+    #   - issues.labeled with 'rca:approve-fix' — runs open-pr (second stage).
+    #   - issues.labeled with 'rca:reject'      — no-op, handled by a sibling job below.
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issues' && (
+        contains(github.event.issue.labels.*.name, 'incident') ||
+        github.event.label.name == 'rca:approve-fix'
+      ))
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Determine incident ID and stage
+        id: incident
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "id=${{ inputs.incident_id }}" >> "$GITHUB_OUTPUT"
+            echo "stage=${{ inputs.rca_stage }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "id=${{ github.event.issue.number }}" >> "$GITHUB_OUTPUT"
+            # Label-driven stage: rca:approve-fix → open-pr; everything
+            # else (including the initial 'incident' label) → propose-only.
+            if [ "${{ github.event.action }}" = "labeled" ] && \
+               [ "${{ github.event.label.name }}" = "rca:approve-fix" ]; then
+              echo "stage=open-pr" >> "$GITHUB_OUTPUT"
+            else
+              echo "stage=propose-only" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+
+      - name: Honor RCA_DISABLED kill switch
+        env:
+          RCA_DISABLED: ${{ vars.RCA_DISABLED }}
+        run: |
+          if [ "${RCA_DISABLED:-0}" = "1" ] || [ "${RCA_DISABLED:-0}" = "true" ]; then
+            echo "::warning::RCA pipeline disabled via RCA_DISABLED repo variable. Exiting cleanly."
+            echo "RCA_DISABLED_EXIT=1" >> "$GITHUB_ENV"
+            exit 0
+          fi
+
+      # Hard workflow gate for the HITL flag. Without this, a dev who
+      # sets `rca_stage: full` on workflow_dispatch could bypass the
+      # prose guardrail in the fix-and-test agent. The soft guardrail
+      # (in .claude/agents/fix-and-test.md) still exists as defense in
+      # depth; this is the hard floor.
+      - name: Enforce RCA_REQUIRE_FIX_APPROVAL gate
+        if: env.RCA_DISABLED_EXIT != '1'
+        env:
+          RCA_REQUIRE_FIX_APPROVAL: ${{ vars.RCA_REQUIRE_FIX_APPROVAL || '1' }}
+          REQUESTED_STAGE: ${{ steps.incident.outputs.stage }}
+        run: |
+          if [ "${RCA_REQUIRE_FIX_APPROVAL:-1}" = "1" ] || [ "${RCA_REQUIRE_FIX_APPROVAL:-1}" = "true" ]; then
+            if [ "${REQUESTED_STAGE}" = "full" ]; then
+              echo "::error::Refusing to run RCA_STAGE=full while RCA_REQUIRE_FIX_APPROVAL=1 is set."
+              echo "::error::The HITL gate is on. Either flip RCA_REQUIRE_FIX_APPROVAL=0 at the repo-variable level (requires ops sign-off and a SECURITY.md note), or use stage 'propose-only' / 'open-pr'."
+              exit 1
+            fi
+            echo "HITL gate active: proposals require human approval via the rca:approve-fix label."
+          else
+            echo "::warning::RCA_REQUIRE_FIX_APPROVAL is OFF. Auto-PR is enabled — this should only be used in dev/pilot, not production."
+          fi
+
+      # Hydrate the proposal JSON from the incident issue's comment
+      # history. This is the durable cross-run handoff: the
+      # propose-only run posted a comment containing the proposal JSON
+      # inside `<!--RCA-PROPOSAL-JSON:START-->` / `...:END-->` markers,
+      # base64-encoded. We extract the most recent such payload and
+      # write it to .rca/fix-proposals/<id>.json before Claude runs, so
+      # the fix-and-test agent in open-pr mode finds it at the expected
+      # local path. This replaces the previous (broken) cross-run
+      # download-artifact@v4 approach — artifacts don't cross workflow
+      # runs without an explicit token + run-id lookup.
+      - name: Hydrate proposal from incident issue comment (open-pr stage)
+        if: env.RCA_DISABLED_EXIT != '1' && steps.incident.outputs.stage == 'open-pr'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ steps.incident.outputs.id }}
+        run: |
+          set -euo pipefail
+          mkdir -p .rca/fix-proposals
+          # Delegates to scripts/hydrate_proposal.py, which is covered by
+          # scripts/tests/test_handoff_roundtrip.py. Keeping the logic in
+          # a script (rather than inline Python) is what makes the
+          # cross-run handoff testable — without the extraction, the
+          # single most fragile seam in the chassis had no regression
+          # guard at all.
+          python scripts/hydrate_proposal.py \
+            --issue "${ISSUE_NUMBER}" \
+            --repo  "${GITHUB_REPOSITORY}" \
+            --out   ".rca/fix-proposals/${ISSUE_NUMBER}.json"
+
+      - name: Setup Python (for custom skill scripts)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install Python deps
+        run: |
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
+
+      # Sanitize the incident issue body to neutralize prompt-injection
+      # patterns before any agent reads it. The incident body is
+      # untrusted input (anyone with `issues: write` can open an
+      # incident); treating it as trustworthy was the most glaring
+      # residual risk in the chassis. We don't try to "detect malice" —
+      # we just wrap the body in a tagged quarantine block and fence
+      # common injection shapes (system/tool markers, `</SYSTEM>` etc.)
+      # so the downstream agent sees them as literal quoted text.
+      - name: Sanitize incident body (prompt-injection mitigation)
+        if: env.RCA_DISABLED_EXIT != '1' && github.event_name == 'issues'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NUMBER: ${{ steps.incident.outputs.id }}
+        run: |
+          set -euo pipefail
+          mkdir -p .rca
+          python scripts/sanitize_incident_body.py \
+            --issue "${ISSUE_NUMBER}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --out  .rca/incident-body.sanitized.txt
+
+      - name: Setup Node (for MCP servers that use npx)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Run Claude Code headless RCA
+        id: rca
+        if: env.RCA_DISABLED_EXIT != '1'
+        env:
+          ANTHROPIC_API_KEY:          ${{ secrets.ANTHROPIC_API_KEY }}
+          ATLASSIAN_OAUTH_TOKEN:      ${{ secrets.ATLASSIAN_OAUTH_TOKEN }}
+          AZURE_DEVOPS_ORG_URL:       ${{ secrets.AZURE_DEVOPS_ORG_URL }}
+          AZURE_DEVOPS_PAT:           ${{ secrets.AZURE_DEVOPS_PAT }}
+          DD_API_KEY:                 ${{ secrets.DD_API_KEY }}
+          DD_APP_KEY:                 ${{ secrets.DD_APP_KEY }}
+          DT_ENV_URL:                 ${{ secrets.DT_ENV_URL }}
+          DT_API_TOKEN:               ${{ secrets.DT_API_TOKEN }}
+          GITHUB_PAT:                 ${{ secrets.GITHUB_PAT }}
+          PAGERDUTY_API_TOKEN:        ${{ secrets.PAGERDUTY_API_TOKEN }}
+          INCIDENT_ID:                ${{ steps.incident.outputs.id }}
+          # HITL + staged execution controls. See .claude/commands/rca.md
+          # and .claude/agents/orchestrator.md for the contract.
+          RCA_STAGE:                  ${{ steps.incident.outputs.stage }}
+          RCA_REQUIRE_FIX_APPROVAL:   ${{ vars.RCA_REQUIRE_FIX_APPROVAL || '1' }}
+          RCA_DISABLED:               ${{ vars.RCA_DISABLED || '0' }}
+          # Reviewer roster for PRs opened by fix-and-test. Comma-separated
+          # GitHub handles (no '@' prefix). Default is 'copilot' so the
+          # original "second pair of eyes" convention still applies without
+          # hardcoding — orgs with different review bots or teams set the
+          # variable at the repo level.
+          RCA_PR_REVIEWERS:           ${{ vars.RCA_PR_REVIEWERS || 'copilot' }}
+          # RCA_DRY_RUN: when set to '1', the pipeline exercises the full
+          # agent topology but substitutes fixture data for every MCP call
+          # and refuses to open a PR. Intended for the pre-pilot shakedown.
+          # workflow_dispatch input wins over the repo variable so a
+          # one-off shakedown run doesn't require flipping the repo var.
+          RCA_DRY_RUN: >-
+            ${{ (github.event_name == 'workflow_dispatch' && inputs.rca_dry_run) && '1'
+                || vars.RCA_DRY_RUN || '0' }}
+        run: |
+          # Install Claude Code CLI
+          npm install -g @anthropic-ai/claude-code
+
+          mkdir -p .rca/reports
+
+          # Headless run. `-p` (aka `--print`) is the non-interactive mode —
+          # there is no separate `--headless` flag in the CLI, and no
+          # `--max-turns` flag either (both were written from memory during
+          # an earlier pass and surfaced as bugs in the pre-pilot shakedown
+          # when we actually ran `claude --help`). `--output-format stream-json`
+          # is the documented machine-readable format. The .mcp.json at repo
+          # root is picked up automatically, as are .claude/agents/,
+          # .claude/skills/, and .claude/commands/.
+          #
+          # `--permission-mode bypassPermissions` is mandatory in CI: without
+          # it, any MCP tool call (and there are many) will block waiting for
+          # an interactive "approve tool?" prompt that never comes, and the
+          # job will hang until the GitHub Actions timeout kills it. We
+          # accept the risk because every MCP write in this pipeline is
+          # separately guarded at the agent level (fix-and-test never
+          # merges, validator never mutates, etc.) and the whole thing runs
+          # under RCA_REQUIRE_FIX_APPROVAL=1 by default.
+          #
+          # `--verbose` is required by the CLI when streaming JSON in print
+          # mode — without it the CLI rejects the combination.
+          claude \
+            --print \
+            --output-format stream-json \
+            --verbose \
+            --permission-mode bypassPermissions \
+            "/rca ${INCIDENT_ID}" \
+            > .rca/stream.jsonl
+
+          # The /rca command writes a compact summary + full JSON to
+          # .rca/reports/<id>-<ts>.json. Pick the most recent one.
+          LATEST=$(ls -t .rca/reports/*.json 2>/dev/null | head -1 || true)
+          if [ -z "$LATEST" ]; then
+            echo "::error::RCA produced no report"
+            exit 1
+          fi
+          echo "report=$LATEST" >> "$GITHUB_OUTPUT"
+
+          # Extract the human-readable postmortem for the issue comment.
+          python - <<'PY' > .rca/postmortem.md
+          import json, os, sys, pathlib
+          p = pathlib.Path(os.environ["GITHUB_OUTPUT"]).read_text()
+          report_path = [l.split("=",1)[1] for l in p.splitlines() if l.startswith("report=")][-1]
+          data = json.loads(pathlib.Path(report_path).read_text())
+          inc = data.get("incident", {})
+          win = data.get("time_window", {})
+          root = data.get("root_cause", {})
+          prior = (data.get("prior_incidents") or [{}])[0]
+          pr = data.get("pr", {})
+          warns = data.get("validator_warnings", [])
+
+          print(f"## RCA for {inc.get('id','?')} — {inc.get('title','')}\n")
+          print(f"**Time window:** `{win.get('start','?')}` → `{win.get('end','?')}` "
+                f"(confidence {win.get('confidence','?')})\n")
+          print(f"**Top root-cause hypothesis:** {root.get('summary','(none)')}\n")
+          if prior.get('id'):
+              print(f"**Closest prior incident:** [{prior['id']}]({prior.get('url','')}) "
+                    f"— {prior.get('title','')} (BM25 score {prior.get('score','?')})\n")
+          if pr.get('url'):
+              reviewers = pr.get('reviewers') or ['copilot']
+              rev_str = ", ".join(f"@{r.lstrip('@')}" for r in reviewers)
+              print(f"**Proposed fix PR:** {pr['url']}  \n_Reviewer(s): {rev_str}_\n")
+          if warns:
+              print("### Validator warnings")
+              for w in warns:
+                  print(f"- {w}")
+          PY
+
+      - name: Post postmortem as issue comment
+        if: env.RCA_DISABLED_EXIT != '1' && github.event_name == 'issues'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync('.rca/postmortem.md', 'utf8');
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });
+
+      - name: Upload full RCA report
+        if: env.RCA_DISABLED_EXIT != '1'
+        uses: actions/upload-artifact@v4
+        with:
+          name: rca-report-${{ steps.incident.outputs.id }}-${{ steps.incident.outputs.stage }}
+          path: |
+            .rca/reports/*.json
+            .rca/stream.jsonl
+            .rca/postmortem.md
+          retention-days: 30
+
+      # Retain the local proposal JSON as a secondary audit trail. The
+      # primary, durable cross-run hand-off is the base64-JSON payload
+      # embedded in the incident issue's proposal comment (see
+      # "Hydrate proposal from incident issue comment" step above).
+      # Artifacts are non-durable across workflow runs in GitHub Actions
+      # v4 without an explicit cross-run token + run-id lookup, so we
+      # deliberately do NOT depend on this upload for the two-phase flow.
+      - name: Upload fix proposal (audit trail only)
+        if: env.RCA_DISABLED_EXIT != '1' && steps.incident.outputs.stage == 'propose-only'
+        uses: actions/upload-artifact@v4
+        with:
+          name: rca-proposal-audit-${{ steps.incident.outputs.id }}
+          path: .rca/fix-proposals/*.json
+          retention-days: 14
+          if-no-files-found: warn

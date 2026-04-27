@@ -1,0 +1,32 @@
+{
+  "_comment": "Structural assertions, not byte-exact expected values. The harness checks invariants; prompt/model drift won't break it.",
+  "module_router": {
+    "top_service": "inventory-service",
+    "must_not_disambiguate": false,
+    "ticket_text_used": "checkout failing last-unit reserves inventory"
+  },
+  "time_window_selector": {
+    "top_window_contains_utc": "2026-04-18T08:30:00Z",
+    "min_confidence": 0.3,
+    "supporting_evidence_required": ["change_points", "deploys", "pages"]
+  },
+  "time_window_selector_vendor": {
+    "_comment": "With vendor_anomalies fed in, the same fixture should produce (a) a top window that still contains 08:30, (b) at least one vendor anomaly surfaced in its supporting_evidence, and (c) a strictly-not-lower confidence than the no-vendor baseline. That last check is what proves Watchdog is first-class, not cosmetic.",
+    "top_window_contains_utc": "2026-04-18T08:30:00Z",
+    "must_surface_vendor_evidence": true,
+    "confidence_must_not_regress_vs_baseline": true
+  },
+  "bm25_rerank": {
+    "top_candidate_id": "PM-42",
+    "top_candidate_min_score": 2.0,
+    "query_used": "checkout failing last-unit reserves inventory 500 boundary"
+  },
+  "anomaly_ensemble": {
+    "_comment": "Run only as a smoke check — we don't assert specific anomalies because the detector is probabilistic",
+    "should_return_valid_json": true
+  },
+  "cross_agent_validator": {
+    "_comment": "Given a contrived contradiction (fix touches services not in signals), validator must flag a warning",
+    "contradiction_warning_expected": true
+  }
+}

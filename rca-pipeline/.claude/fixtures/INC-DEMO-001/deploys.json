@@ -1,0 +1,20 @@
+{
+  "deploys": [
+    {
+      "repo": "python-inventory-service",
+      "merged_at": "2026-04-18T08:10:00Z",
+      "sha": "7c4f9a2",
+      "pr_number": 421,
+      "pr_title": "Refactor reserve() boundary check",
+      "author": "alice@aspiresys.com"
+    },
+    {
+      "repo": "java-order-service",
+      "merged_at": "2026-04-17T14:22:00Z",
+      "sha": "e82b311",
+      "pr_number": 418,
+      "pr_title": "Bump spring-boot to 3.2.5 (security)",
+      "author": "bob@aspiresys.com"
+    }
+  ]
+}
