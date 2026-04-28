@@ -60,7 +60,7 @@ jobs:
     #   - issues.opened with label 'incident' — runs propose-only.
     #   - issues.labeled with 'incident'      — runs propose-only.
     #   - issues.labeled with 'rca:approve-fix' — runs open-pr (second stage).
-    #   - issues.labeled with 'rca:reject'      — no-op, handled by a sibling job below.
+    #   - issues.labeled with 'rca:reject'      — no-op (excluded by the if: condition above; never fires).
     if: >
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'issues' && (
