@@ -168,6 +168,22 @@ The proposal JSON is durably stored as a base64 payload inside the proposal comm
 
 ---
 
+## Service-to-repo resolution in live mode
+
+`fix-and-test` does not have a hard-coded mapping from service name to GitHub repo. The mapping flows through the chassis from the upstream `signals` phase. The `signals` agent emits a `deploys` array, each entry shaped:
+
+```json
+{ "repo": "org/inventory-service", "sha": "7c4f9a2", "merged_at": "...", "pr_url": "..." }
+```
+
+This array surfaces every recent deploy to a candidate service inside the selected time window, sourced via `mcp__github__*`. `fix-and-test` reads each entry's `repo` and uses the GitHub MCP to fetch the relevant files, generate the diff, and open the PR against that repo's default branch.
+
+The implication for live setup: the GitHub PAT used by the chassis must have access to every repo that hosts a candidate service. If a service lives in a private repo the PAT can't see, the deploys query for that service returns empty and the fix can't be generated. The chassis logs `coverage: insufficient_repo_access` rather than guessing the repo.
+
+The demo services under `java-order-service/`, `node-notification-service/`, and `python-inventory-service/` are co-located with the chassis so the fixture harness can exercise this end-to-end without needing live GitHub MCP access. They do NOT model how a real deployment is shaped.
+
+---
+
 ## Production safety controls
 
 Three environment variables form the production contract. Treat them as non-negotiable, not optional configuration.
