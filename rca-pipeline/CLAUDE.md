@@ -90,11 +90,10 @@ Skills live under `.claude/skills/<name>/` and have:
 - `scripts/` — Python (or whatever) that does the actual work.
 
 The scripts import from `agents/algorithms/` by putting `agents/` on
-`sys.path` (matching the project's existing convention — every `agents/*.py`
-file does `from algorithms.X`, so `agents/` is expected to be on PYTHONPATH
-and `algorithms/` resolves as a top-level package). That keeps the existing
-Python IP untouched — skills are the interface layer, not a rewrite.
-Pattern:
+`sys.path`. The `agents/` directory holds two things post-legacy-cleanup:
+the deterministic Python IP under `algorithms/` (CUSUM, BM25, anomaly
+ensemble, etc.) and `validation.py`. The skill layer is the public interface
+to those algorithms — agents call skills, skills call algorithms. Pattern:
 
 ```python
 HERE = Path(__file__).resolve()
@@ -208,6 +207,73 @@ The contract between the two stages is the file
 writes and uploads as an artifact; the open-pr stage downloads and
 applies. The diff is pinned in that file — the open-pr stage is not
 allowed to regenerate the fix, only realize the one that was approved.
+
+## Mid-phase checkpoint and resume
+
+The orchestrator persists a checkpoint after every successful phase
+transition (intake, signals, prior-incident, fix-and-test) — and after the
+validator passes for that phase. Checkpoints live at
+`.rca/checkpoints/<incident_id>.json` and store the validated output of
+each completed phase. Format:
+
+```json
+{
+  "incident_id": "INC-1234",
+  "started_at": "2026-05-08T07:38:11Z",
+  "rca_stage": "propose-only",
+  "last_completed_phase": "signals",
+  "phase_outputs": {
+    "intake":  { ...validated output... },
+    "signals": { ...validated output... }
+  }
+}
+```
+
+On `/rca` start, the orchestrator checks for an existing checkpoint at
+`.rca/checkpoints/<incident_id>.json`:
+
+- **No checkpoint:** start from intake.
+- **Checkpoint present:** load `phase_outputs`, skip every phase up through
+  `last_completed_phase`, resume from the next phase. Pass the loaded
+  outputs into the resumed phase via the same input contract used during a
+  fresh run.
+
+After `fix-and-test` completes successfully and the final report is
+written, the checkpoint is deleted so a re-run on the same `incident_id`
+starts fresh. If the orchestrator crashes mid-phase, the checkpoint of the
+last *completed* phase is preserved (atomic-rename writes ensure no
+partial state can be observed). Implementation lives in
+`scripts/checkpoint.py` with regression coverage in
+`scripts/tests/test_checkpoint.py` (atomic write, partial-corruption
+recovery, multi-phase resume).
+
+## Service-to-repo resolution in fix-and-test
+
+In live mode, `fix-and-test` does NOT have a hard-coded mapping from
+service names to GitHub repos. The mapping flows through the chassis from
+the upstream signals phase. The `signals` agent emits a `deploys` array
+with entries like:
+
+```json
+{ "repo": "org/inventory-service", "sha": "7c4f9a2", "merged_at": "...", "pr_url": "..." }
+```
+
+This array surfaces every recent deploy to a candidate service inside the
+selected time window, sourced from the GitHub MCP. `fix-and-test` reads
+each entry's `repo` and uses the GitHub MCP to fetch the relevant files,
+generate the diff, and open the PR against that repo's default branch.
+
+The implication for live setup: the GitHub PAT used by the chassis must
+have access to every repo that hosts a candidate service. If a service
+lives in a private repo the PAT can't see, the deploys query for that
+service will return empty and the fix can't be generated — log it as
+`coverage: insufficient_repo_access` rather than guessing.
+
+The demo services under `java-order-service/`, `node-notification-service/`,
+and `python-inventory-service/` are co-located with the chassis so the
+fixture harness can exercise this path end-to-end without needing live
+GitHub MCP access. They are NOT meant to model how a real deployment is
+shaped.
 
 ## Testing
 
