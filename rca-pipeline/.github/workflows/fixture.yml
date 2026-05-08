@@ -67,6 +67,14 @@ jobs:
       - name: Checkpoint/resume tests
         run: python3 -m unittest scripts.tests.test_checkpoint -v
 
+      # End-to-end resume integration: simulate the orchestrator's full
+      # read/write/clear sequence with a mid-flight crash, then verify
+      # the second run reads the saved checkpoint and resumes from the
+      # correct phase. Includes a prose-lint of orchestrator.md that
+      # guards the resume contract tokens against silent drift.
+      - name: Resume integration test
+        run: python3 -m unittest scripts.tests.test_checkpoint_resume_integration -v
+
       # Install claude CLI and run the init-block smoke test. This is
       # the gate that would have caught the three flag bugs we shipped
       # during the pre-pilot shakedown. No API key is needed — we

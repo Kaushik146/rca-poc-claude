@@ -119,7 +119,7 @@ test-checkpoint:
 	$(PYTHON) -m unittest scripts.tests.test_checkpoint -v 2>&1 | tail -20
 
 .PHONY: test-scripts
-test-scripts: test-handoff test-sanitize test-chassis-contracts test-checkpoint
+test-scripts: test-handoff test-sanitize test-chassis-contracts test-checkpoint test-resume-integration
 
 .PHONY: smoke-cli
 smoke-cli:
@@ -156,3 +156,8 @@ clean:
 clean-all: clean stop
 	-rm -rf reports/
 	@echo "✅ Full clean complete"
+
+.PHONY: test-resume-integration
+test-resume-integration:
+	@echo "→ End-to-end resume integration (crash mid-flight, resume from checkpoint)..."
+	$(PYTHON) -m unittest scripts.tests.test_checkpoint_resume_integration -v 2>&1 | tail -15
