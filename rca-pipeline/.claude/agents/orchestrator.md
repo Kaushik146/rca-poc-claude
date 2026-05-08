@@ -94,6 +94,24 @@ Before delegating to any sub-agent:
    unintentional missing credential should fail loudly, not silently
    drop into fixture mode.
 
+5. **Mid-phase checkpoint and resume.** Before starting any phase, run
+   `python3 scripts/checkpoint.py --read --incident-id <incident_id>` via
+   the Bash tool. The script returns the saved checkpoint as JSON on
+   stdout, or exits non-zero if no checkpoint exists.
+   - **No checkpoint:** start from intake.
+   - **Checkpoint present:** the JSON has `last_completed_phase` and
+     `phase_outputs`. Skip every phase up through `last_completed_phase`
+     and resume from the next phase, passing the loaded outputs into the
+     resumed phase via the same input contract used during a fresh run.
+   After every phase + validator passes, call
+   `python3 scripts/checkpoint.py --write --incident-id <incident_id>
+   --phase <phase_name> --output @-` (stdin: validated phase output JSON).
+   The script writes atomically (write to `.tmp`, then rename) so an
+   orchestrator crash mid-write never leaves a partial checkpoint. After
+   `fix-and-test` completes successfully and the final report is
+   written, call `python3 scripts/checkpoint.py --clear --incident-id
+   <incident_id>` so a re-run on the same incident_id starts fresh.
+
 ## Non-negotiables
 
 - Never fabricate a time window when `time-window-selector` returns low confidence. Escalate to the user.

@@ -20,6 +20,39 @@ JSON from the orchestrator containing:
   (run *after* a human has approved the proposal), or `"full"` (dev/pilot
   override only; generates fix and opens PR in the same pass).
 
+## Service-to-repo resolution
+
+You do not have a hard-coded mapping from service name to GitHub repo. The
+mapping flows through the chassis from upstream. The `signals` agent's
+output contains a `deploys` array, each entry shaped like:
+
+```json
+{ "repo": "org/inventory-service", "sha": "7c4f9a2",
+  "merged_at": "2026-04-18T08:10:00Z", "pr_url": "...",
+  "files_changed": [ "..." ] }
+```
+
+The `repo` field is the qualified GitHub path of the service the deploy
+landed in, sourced from the GitHub MCP at signals-collection time. Use it
+to:
+
+1. **Read source.** Pass `repo` to `mcp__github__*` to fetch the files
+   implicated by the hypothesis. Read at `HEAD` (not the deploy sha) —
+   the diff lands on `HEAD`.
+2. **Pick target branch.** Default to the repo's default branch
+   (usually `main`). Fix branch name: `rca/<incident-id>`.
+3. **Open the PR.** Against the same `repo` the failing deploy came from.
+
+If `signals.deploys` is empty for the candidate service (no deploy in
+the window, or the GitHub PAT can't see the repo), stop and emit
+`{"error": "no_repo_resolved", "candidate_service": "..."}`. Do not guess
+the repo from the service name — the chassis would silently land a fix
+in the wrong place.
+
+In dry-run mode, `signals.deploys` comes from
+`.claude/fixtures/<incident_id>/deploys.json` and the same resolution path
+is exercised end-to-end without hitting the GitHub MCP.
+
 ## What to do
 
 The agent runs in one of three flows, selected by `mode`. The default

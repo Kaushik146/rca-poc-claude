@@ -60,6 +60,13 @@ jobs:
       - name: Chassis contract tests
         run: python3 -m unittest scripts.tests.test_chassis_contracts -v
 
+      # Mid-phase checkpoint/resume: atomic write, multi-phase merge,
+      # corrupt JSON refused, format_version mismatch refused, wrong
+      # incident_id refused. Guards the contract the orchestrator agent
+      # leans on to resume after a mid-run crash.
+      - name: Checkpoint/resume tests
+        run: python3 -m unittest scripts.tests.test_checkpoint -v
+
       # Install claude CLI and run the init-block smoke test. This is
       # the gate that would have caught the three flag bugs we shipped
       # during the pre-pilot shakedown. No API key is needed — we
