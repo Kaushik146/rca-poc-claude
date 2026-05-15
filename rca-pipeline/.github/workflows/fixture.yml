@@ -75,6 +75,15 @@ jobs:
       - name: Resume integration test
         run: python3 -m unittest scripts.tests.test_checkpoint_resume_integration -v
 
+      # Direct unit coverage for the three live algorithms — CUSUM,
+      # BM25, anomaly detector. Previously these were only tested
+      # indirectly via the fixture harness, so a regression in the math
+      # would only surface as a selector misfire on whatever fixture
+      # happened to depend on it. These tests pin the algorithm
+      # contracts in isolation.
+      - name: Core algorithm tests
+        run: python3 -m unittest scripts.tests.test_algorithms_cusum scripts.tests.test_algorithms_bm25 scripts.tests.test_algorithms_anomaly -v
+
       # Install claude CLI and run the init-block smoke test. This is
       # the gate that would have caught the three flag bugs we shipped
       # during the pre-pilot shakedown. No API key is needed — we

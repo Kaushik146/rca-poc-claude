@@ -7,17 +7,22 @@
       "url": "https://mcp.atlassian.com/v1/mcp",
       "headers": {
         "Authorization": "Bearer ${ATLASSIAN_OAUTH_TOKEN}"
-      }
+      },
+      "_pinned_version": "n/a \u2014 remote HTTP server, version is server-controlled by Atlassian"
     },
     "azure-devops": {
       "_comment": "Microsoft's official ADO MCP. Use local stdio until remote MCP GA. See microsoft/azure-devops-mcp.",
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "@microsoft/azure-devops-mcp-server"],
+      "args": [
+        "-y",
+        "@microsoft/azure-devops-mcp-server@^1.0.0"
+      ],
       "env": {
         "AZURE_DEVOPS_ORG_URL": "${AZURE_DEVOPS_ORG_URL}",
         "AZURE_DEVOPS_PAT": "${AZURE_DEVOPS_PAT}"
-      }
+      },
+      "_pinned_version": "Pinned to ^1.0.0 (any 1.x). Operators MUST tighten this to a specific version (e.g. @1.2.3) before production."
     },
     "datadog": {
       "_comment": "Datadog Remote MCP. GA March 10, 2026. Toolsets: APM, logs, metrics, incidents. Swap to self-host (e.g. winor30/mcp-server-datadog) if data must stay in VPC.",
@@ -26,35 +31,59 @@
       "headers": {
         "DD-API-KEY": "${DD_API_KEY}",
         "DD-APPLICATION-KEY": "${DD_APP_KEY}"
-      }
+      },
+      "_pinned_version": "n/a \u2014 remote HTTP server, version is server-controlled by Datadog"
     },
     "dynatrace": {
       "_comment": "Dynatrace official MCP. Alternative to Datadog; exposes Davis AI + DQL over Grail.",
       "type": "stdio",
       "command": "docker",
-      "args": ["run", "--rm", "-i", "-e", "DT_ENV_URL", "-e", "DT_API_TOKEN", "mcp/dynatrace-mcp-server"],
+      "args": [
+        "run",
+        "--rm",
+        "-i",
+        "-e",
+        "DT_ENV_URL",
+        "-e",
+        "DT_API_TOKEN",
+        "mcp/dynatrace-mcp-server:v0.5.0"
+      ],
       "env": {
         "DT_ENV_URL": "${DT_ENV_URL}",
         "DT_API_TOKEN": "${DT_API_TOKEN}"
-      }
+      },
+      "_pinned_version": "Image tag pinned to v0.5.0. Operators MUST replace with their tested tag (or sha256 digest for full immutability) before production."
     },
     "github": {
       "_comment": "GitHub official MCP. Remote OAuth for Claude Code still maturing; prefer local Docker + PAT for now.",
       "type": "stdio",
       "command": "docker",
-      "args": ["run", "--rm", "-i", "-e", "GITHUB_PERSONAL_ACCESS_TOKEN", "ghcr.io/github/github-mcp-server"],
+      "args": [
+        "run",
+        "--rm",
+        "-i",
+        "-e",
+        "GITHUB_PERSONAL_ACCESS_TOKEN",
+        "ghcr.io/github/github-mcp-server:v0.6.0"
+      ],
       "env": {
         "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_PAT}"
-      }
+      },
+      "_pinned_version": "Image tag pinned to v0.6.0. Operators MUST replace with their tested tag (or sha256 digest) before production."
     },
     "pagerduty": {
       "_comment": "PagerDuty official MCP. Mar 27 2026 update added time-range filtering and assignee-on-create.",
       "type": "stdio",
       "command": "npx",
-      "args": ["-y", "@pagerduty/mcp-server"],
+      "args": [
+        "-y",
+        "@pagerduty/mcp-server@^1.0.0"
+      ],
       "env": {
         "PAGERDUTY_API_TOKEN": "${PAGERDUTY_API_TOKEN}"
-      }
+      },
+      "_pinned_version": "Pinned to ^1.0.0 (any 1.x). Operators MUST tighten this to a specific version before production."
     }
-  }
+  },
+  "_version_pinning_policy": "Every stdio server MUST be pinned to a specific version (npm @x.y.z or docker :tag). Unpinned servers are caught by scripts/verify_mcp_config.py and refused in live-deploy CI (--require-env mode). Before promoting to production, operators must replace the semver ranges below with the exact version they tested against."
 }

@@ -119,7 +119,7 @@ test-checkpoint:
 	$(PYTHON) -m unittest scripts.tests.test_checkpoint -v 2>&1 | tail -20
 
 .PHONY: test-scripts
-test-scripts: test-handoff test-sanitize test-chassis-contracts test-checkpoint test-resume-integration
+test-scripts: test-handoff test-sanitize test-chassis-contracts test-checkpoint test-resume-integration test-algorithms
 
 .PHONY: smoke-cli
 smoke-cli:
@@ -161,3 +161,8 @@ clean-all: clean stop
 test-resume-integration:
 	@echo "→ End-to-end resume integration (crash mid-flight, resume from checkpoint)..."
 	$(PYTHON) -m unittest scripts.tests.test_checkpoint_resume_integration -v 2>&1 | tail -15
+
+.PHONY: test-algorithms
+test-algorithms:
+	@echo "→ Core algorithm unit tests (CUSUM + BM25 + anomaly detector)..."
+	$(PYTHON) -m unittest scripts.tests.test_algorithms_cusum scripts.tests.test_algorithms_bm25 scripts.tests.test_algorithms_anomaly -v 2>&1 | tail -15
