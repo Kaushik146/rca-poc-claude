@@ -119,7 +119,7 @@ test-checkpoint:
 	$(PYTHON) -m unittest scripts.tests.test_checkpoint -v 2>&1 | tail -20
 
 .PHONY: test-scripts
-test-scripts: test-handoff test-sanitize test-chassis-contracts test-checkpoint test-resume-integration test-algorithms test-pii-scrubber
+test-scripts: test-handoff test-sanitize test-chassis-contracts test-checkpoint test-resume-integration test-algorithms test-pii-scrubber test-health
 
 .PHONY: smoke-cli
 smoke-cli:
@@ -171,3 +171,12 @@ test-algorithms:
 test-pii-scrubber:
 	@echo "→ PII scrubber (per-pattern + false-positive guards + JSON walk)..."
 	$(PYTHON) -m unittest scripts.tests.test_pii_scrubber -v 2>&1 | tail -15
+
+.PHONY: test-health
+test-health:
+	@echo "→ Health event log (record/read/check + corruption recovery)..."
+	$(PYTHON) -m unittest scripts.tests.test_health -v 2>&1 | tail -15
+
+.PHONY: health-check
+health-check:
+	@$(PYTHON) scripts/health.py check --since 24h || (echo "::error::recent errors in health log"; exit 1)

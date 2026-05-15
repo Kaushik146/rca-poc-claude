@@ -112,6 +112,28 @@ Before delegating to any sub-agent:
    written, call `python3 scripts/checkpoint.py --clear --incident-id
    <incident_id>` so a re-run on the same incident_id starts fresh.
 
+## Self-observability — record health events
+
+Run `scripts/health.py record` via the Bash tool at every phase
+boundary so silent failures (blocked validators, expired tokens,
+slow phases) leave a trail an operator can audit later. The script
+appends one JSONL line per event at `.rca/health/<incident_id>.jsonl`
+(append-only, crash-safe).
+
+Events to record at minimum:
+
+- Before each phase: `--phase <name> --event-type phase_started --severity info`
+- After each phase succeeds: `--phase <name> --event-type phase_completed --severity info --details '{"duration_ms": N}'`
+- When a phase wall-clock exceeds 2 minutes: `--severity warn --event-type phase_slow`
+- When an MCP call errors with auth: `--severity error --event-type mcp_auth_failure --details '{"mcp": "datadog"}'`
+- When the validator returns `blocking_warnings`: `--phase validator --severity error --event-type validator_blocked --details '{"warnings": [...]}'`
+- When `time-window-selector` confidence < 0.4: `--severity warn --event-type coverage_gap`
+
+Operators run `python3 scripts/health.py check --since 24h` periodically
+(cron, or before promoting to live) to surface any unhandled errors.
+The chassis is not allowed to silently swallow a failure — every error
+condition must produce a health event.
+
 ## Non-negotiables
 
 - Never fabricate a time window when `time-window-selector` returns low confidence. Escalate to the user.

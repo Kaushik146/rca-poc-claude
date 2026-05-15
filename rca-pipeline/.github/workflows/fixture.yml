@@ -93,6 +93,14 @@ jobs:
       - name: PII scrubber tests
         run: python3 -m unittest scripts.tests.test_pii_scrubber -v
 
+      # Self-observability event log: record/read roundtrip, JSONL
+      # append-only with corruption recovery, since-window filtering,
+      # check command exit code on error events. Used by orchestrator
+      # + validator to record blocked validators, MCP auth failures,
+      # slow phases — silent failures get an audit trail.
+      - name: Health event log tests
+        run: python3 -m unittest scripts.tests.test_health -v
+
       # Install claude CLI and run the init-block smoke test. This is
       # the gate that would have caught the three flag bugs we shipped
       # during the pre-pilot shakedown. No API key is needed — we

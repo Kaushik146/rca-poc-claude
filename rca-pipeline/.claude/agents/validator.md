@@ -52,6 +52,26 @@ Claude Code has no native cross-agent validation. When the logs agent says "data
 
 If `blocking_warnings` is non-empty, set `passed: false`. The orchestrator will stop and surface to the user.
 
+## Health event on blocking_warnings
+
+If `blocking_warnings` is non-empty for any phase, also record a health
+event via the Bash tool so the failure is auditable later (not just
+surfaced in the current run's output). Call:
+
+```
+python3 scripts/health.py record \
+    --incident-id <incident_id> \
+    --phase validator \
+    --event-type validator_blocked \
+    --severity error \
+    --details '{"upstream_phase": "<phase_name>", "warnings": [...]}'
+```
+
+For normalizing-only warnings (no blocking_warnings), record at severity
+`warn` with event_type `validator_normalizing_warning`. This is what
+`scripts/health.py check --since 24h` later picks up when operators
+audit the health log.
+
 ## Guardrails
 
 - **Do not fabricate data to make schemas pass.** Missing fields default to `null` or empty lists; never synthesize a plausible value.
