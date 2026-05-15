@@ -119,7 +119,7 @@ test-checkpoint:
 	$(PYTHON) -m unittest scripts.tests.test_checkpoint -v 2>&1 | tail -20
 
 .PHONY: test-scripts
-test-scripts: test-handoff test-sanitize test-chassis-contracts test-checkpoint test-resume-integration test-algorithms
+test-scripts: test-handoff test-sanitize test-chassis-contracts test-checkpoint test-resume-integration test-algorithms test-pii-scrubber
 
 .PHONY: smoke-cli
 smoke-cli:
@@ -166,3 +166,8 @@ test-resume-integration:
 test-algorithms:
 	@echo "→ Core algorithm unit tests (CUSUM + BM25 + anomaly detector)..."
 	$(PYTHON) -m unittest scripts.tests.test_algorithms_cusum scripts.tests.test_algorithms_bm25 scripts.tests.test_algorithms_anomaly -v 2>&1 | tail -15
+
+.PHONY: test-pii-scrubber
+test-pii-scrubber:
+	@echo "→ PII scrubber (per-pattern + false-positive guards + JSON walk)..."
+	$(PYTHON) -m unittest scripts.tests.test_pii_scrubber -v 2>&1 | tail -15

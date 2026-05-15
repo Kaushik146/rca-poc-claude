@@ -84,6 +84,15 @@ jobs:
       - name: Core algorithm tests
         run: python3 -m unittest scripts.tests.test_algorithms_cusum scripts.tests.test_algorithms_bm25 scripts.tests.test_algorithms_anomaly -v
 
+      # PII scrubber — guards every string in the signals phase output
+      # against emails, JWT/bearer tokens, common API key prefixes
+      # (sk-, ghp_, xoxb-, AKIA), IPs, SSN, credit cards, phone numbers.
+      # False-positive guards confirm legit observability data
+      # (UUIDs, git SHAs, version strings, URLs without creds) survives
+      # unscrubbed so debuggability is not compromised.
+      - name: PII scrubber tests
+        run: python3 -m unittest scripts.tests.test_pii_scrubber -v
+
       # Install claude CLI and run the init-block smoke test. This is
       # the gate that would have caught the three flag bugs we shipped
       # during the pre-pilot shakedown. No API key is needed — we

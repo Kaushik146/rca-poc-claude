@@ -53,6 +53,26 @@ candidate services' repos within the window ±2 hours.
 **Step 6. Pages.** PagerDuty MCP — list incidents and page events in the
 window. Cross-reference against the ticket's `reported_at`.
 
+**Step 7. Scrub PII before emitting.** Pipe the assembled output through
+`scripts/pii_scrubber.py` via the Bash tool. The scrubber walks every
+string in the JSON payload (logs, traces, metric names, etc.) and
+replaces emails, JWT/bearer tokens, common API key prefixes (sk-, ghp_,
+xoxb-, AKIA), IPv4 addresses, US SSN, credit cards, and phone numbers
+with tagged sentinels (`<EMAIL>`, `<JWT>`, `<API_KEY>`, etc.). Run:
+
+```
+echo '<signals_json>' | python3 scripts/pii_scrubber.py --input @- --output @-
+```
+
+The scrubber emits structured stats on stderr (e.g.
+`scrubbed: emails=3 jwts=1 ips=4`) which you should capture and include
+in the output as `pii_scrub_stats` for audit trail. Downstream agents
+(prior-incident, fix-and-test) only ever see the scrubbed version —
+the raw logs never leave this phase. Keys are preserved (they're
+schema field names, not user data), and load-bearing identifiers
+(UUIDs, git SHAs, version strings, URLs without embedded credentials)
+are explicitly NOT scrubbed so debuggability is not compromised.
+
 ## Output schema (return as JSON)
 
 ```json
@@ -89,7 +109,8 @@ window. Cross-reference against the ticket's `reported_at`.
   "paging": [
     {"incident_id": "...", "service": "...", "paged_at": "...", "responder": "..."}
   ],
-  "ensemble_fallback_used": false
+  "ensemble_fallback_used": false,
+  "pii_scrub_stats": {"emails": 3, "ips": 4, "jwts": 1}
 }
 ```
 
