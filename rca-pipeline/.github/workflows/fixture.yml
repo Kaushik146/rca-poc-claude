@@ -101,6 +101,15 @@ jobs:
       - name: Health event log tests
         run: python3 -m unittest scripts.tests.test_health -v
 
+      # Structured learning store: record/read roundtrip, validation
+      # (typo'd fix_kind / fix_outcome raises), query filtering +
+      # outcome-rank sorting, summary aggregates, corruption recovery.
+      # Used by fix-and-test to record signal_pattern → fix_kind →
+      # outcome triples so the chassis can build a corpus of "what
+      # works" over time. Future bm25-rerank boost reads from here.
+      - name: Structured learning tests
+        run: python3 -m unittest scripts.tests.test_learning -v
+
       # Install claude CLI and run the init-block smoke test. This is
       # the gate that would have caught the three flag bugs we shipped
       # during the pre-pilot shakedown. No API key is needed — we

@@ -203,6 +203,35 @@ Set `needs_human_judgment: true` when:
 - The fix touches authentication, billing, or data-migration code
 - Tests pass but the diff is larger than 50 lines
 
+## Record a structured learning
+
+After generating and testing the fix (whether in `propose-only` or
+`open-pr` mode), record a structured learning so the chassis can build
+up a corpus of "for signal pattern X, fix kind Y worked Z% of the time"
+over time. Run via the Bash tool:
+
+```
+python3 scripts/learning.py record \
+    --incident-id <incident_id> \
+    --signal-pattern "<concise pattern derived from signals output, e.g. 'high_error_rate + recent_deploy + last_unit_rejected'>" \
+    --fix-kind <code|config|data|infra|spec_gap|no_fix_needed> \
+    --fix-outcome unknown \
+    --prior-incident-id <top BM25 match id or omit> \
+    --files-changed "<comma-separated paths from files_changed>" \
+    --diff-sha256 <diff_sha256 from proposal> \
+    --confidence <high|medium|low based on test results + prior match>
+```
+
+`fix-outcome` starts as `unknown` because the chassis stops before merge
+and can't observe whether the fix stuck. An operator (or a separate
+post-merge webhook) updates the outcome later via
+`scripts/learning.py update --incident-id X --fix-outcome worked`.
+
+The bm25-rerank skill is a future caller of this store — when it picks
+prior incidents to feed the agent, it can boost those with high
+`worked` success rates on similar signal patterns. The recording today
+is the prerequisite for that future boost.
+
 ## Guardrails
 
 - **Smallest diff wins.** If you find yourself adding a second unrelated change, stop and remove it.

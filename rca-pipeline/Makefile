@@ -119,7 +119,7 @@ test-checkpoint:
 	$(PYTHON) -m unittest scripts.tests.test_checkpoint -v 2>&1 | tail -20
 
 .PHONY: test-scripts
-test-scripts: test-handoff test-sanitize test-chassis-contracts test-checkpoint test-resume-integration test-algorithms test-pii-scrubber test-health
+test-scripts: test-handoff test-sanitize test-chassis-contracts test-checkpoint test-resume-integration test-algorithms test-pii-scrubber test-health test-learning
 
 .PHONY: smoke-cli
 smoke-cli:
@@ -180,3 +180,12 @@ test-health:
 .PHONY: health-check
 health-check:
 	@$(PYTHON) scripts/health.py check --since 24h || (echo "::error::recent errors in health log"; exit 1)
+
+.PHONY: test-learning
+test-learning:
+	@echo "→ Structured learning store (record/query/summary/update)..."
+	$(PYTHON) -m unittest scripts.tests.test_learning -v 2>&1 | tail -15
+
+.PHONY: learning-summary
+learning-summary:
+	@$(PYTHON) scripts/learning.py summary
